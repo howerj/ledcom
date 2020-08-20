@@ -19,6 +19,15 @@ static void sleep_us(void *p, unsigned long us) { UNUSED(p); delayMicroseconds(u
 
 };
 
+static const ledcom_sensor_t led_settings = {  /* TODO: Read configuration from EEPROM, have serialize/deserialize functions */
+	.tx_mark_us      = 1000ul,
+	.tx_space_us     = 2000ul,
+	.tx_period_us    = 4000ul,
+	.rx_charge_us    = 1000ul,
+	.rx_sample_us    = 3000ul,
+	.rx_threshold_us = 1500ul,
+};
+
 static ledcom_t ledcom = {
 	.anode = 4, .cathode = 5, .mode = 0,
 	.pin_configure = pin_configure,
@@ -27,6 +36,7 @@ static ledcom_t ledcom = {
 	.time_us = time_us,
 	.sleep_us = sleep_us,
 	.param = NULL,
+	.sensor = &led_settings,
 };
 
 static void wait_for_key(void) {
@@ -44,11 +54,21 @@ void setup(void) {
 }
 
 void loop(void) {
-	wait_for_key();
-	Serial << F("\r\nstarting...");
-	for(;;) {
-		const int level = ledcom_level(&ledcom);
-		Serial << level << F("\r\n");
+	int tx = 1;
+	if (tx) {
+		for (;;) {
+			static const unsigned char hello[] = "Hello, World!\r\n";
+			ledcom_send_octets(&ledcom, hello, sizeof hello);
+			Serial << F("Hello, World!\r\n");
+		}
+	} else {
+		wait_for_key();
+		Serial << F("\r\nstarting...");
+		for(;;) {
+			const int level = ledcom_level(&ledcom);
+			Serial << level << F("\r\n");
+			ledcom_send_octet(&ledcom, 0xFF);
+		}
 	}
 }
 

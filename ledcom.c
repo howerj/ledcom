@@ -26,6 +26,7 @@ typedef enum {
 	LED_MODE_EMIT_E,
 	LED_MODE_REVERSE_BIAS_E,
 	LED_MODE_DISCHARGE_E,
+	LED_MODE_OFF_E,
 } led_mode_e;
 
 enum {
@@ -37,26 +38,8 @@ typedef struct {
 	unsigned long start, prev, current;
 } timer_t;
 
-typedef struct {
-	unsigned long tx_mark_us,
-		tx_space_us,
-		tx_period_us,
-		rx_charge_us,
-		rx_sample_us,
-		rx_threshold_us;
-} led_sensor_t;
-
 static int time_us(ledcom_t *l) { assert(l); return l->time_us(l->param); }
 static void sleep_us(ledcom_t *l, unsigned long us) { assert(l); l->sleep_us(l->param, us); }
-
-static const led_sensor_t led_settings = {  /* TODO: Read configuration from EEPROM, have serialize/deserialize functions */
-	.tx_mark_us      = 1000ul,
-	.tx_space_us     = 500ul,
-	.tx_period_us    = 5000ul,
-	.rx_charge_us    = 1000ul,
-	.rx_sample_us    = 5000ul,
-	.rx_threshold_us = 2500ul,
-};
 
 static int led_mode(ledcom_t *l, led_mode_e mode) {
 	assert(l);
@@ -77,6 +60,10 @@ static int led_mode(ledcom_t *l, led_mode_e mode) {
 		l->pin_configure(l->param, l->anode,   LED_PIN_OUTPUT_E);
 		l->pin_configure(l->param, l->cathode, LED_PIN_INPUT_E);
 		l->pin_set(l->param, l->anode,   0);
+		break;
+	case LED_MODE_OFF_E:
+		l->pin_configure(l->param, l->anode,   LED_PIN_INPUT_E);
+		l->pin_configure(l->param, l->cathode, LED_PIN_INPUT_E);
 		break;
 	default:
 		return -1;
@@ -114,7 +101,7 @@ static int timer_expired(ledcom_t *l, timer_t *t, const unsigned long interval_i
 
 static int led_send_bit(ledcom_t *l, int on) {
 	assert(l);
-	const led_sensor_t *s = &led_settings;
+	ledcom_sensor_t const *s = l->sensor;
 	unsigned long delay_us = on ? s->tx_mark_us : s->tx_space_us;
 	if (led_mode(l, LED_MODE_EMIT_E) < 0)
 		return -1;
@@ -135,14 +122,23 @@ int ledcom_send_octet(ledcom_t *l, unsigned char b) {
 	return 0;
 }
 
+int ledcom_send_octets(ledcom_t *l, const unsigned char *bs, size_t length) {
+	assert(l);
+	assert(a);
+	for (size_t i = 0; i < length; i++)
+		if (ledcom_send_octet(l, bs[i]) < 0)
+			return -1;
+	return 0;
+}
+
 int ledcom_init(ledcom_t *l) {
 	assert(l);
-	return 0;
+	return led_mode(l, LED_MODE_OFF_E);
 }
 
 int ledcom_level(ledcom_t *l) {
 	assert(l);
-	const led_sensor_t *s = &led_settings;
+	ledcom_sensor_t const *s = l->sensor;
 	if (led_mode(l, LED_MODE_REVERSE_BIAS_E) < 0) /* charge LED */
 		return -1;
 	sleep_us(l, s->rx_charge_us);
@@ -158,7 +154,10 @@ int ledcom_level(ledcom_t *l) {
 			break;
 	}
 	const unsigned long r = t.current - t.start;
+	if (led_mode(l, LED_MODE_OFF_E) < 0)
+		return -1;
 	sleep_us(l, s->rx_sample_us - r);
-	return r > s->rx_threshold_us ? 1 : 0;
+	//return r > s->rx_threshold_us ? 1 : 0;
+	return r;
 }
 
